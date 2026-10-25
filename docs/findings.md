@@ -1,0 +1,3 @@
+1. Bir API kullancısı olarak veri gönderme işlemini test ederken verinin gönderilmesinde sorun olmadığını fakat posizyon kısmında bir filtreleme olmadan Frontend kısmında sunulan seçenekelerden farklı pozisyonların da gönderilebildiğini ve bu isteklerin backend tarafından kabul edildiğini gördüm.
+
+2. /api/healtcheck isteği gönderdiğimde sistem durumunu gösteren ksıımda "OK" kısmının mongo ile istibaharat sağlamadan sistemin aktif olduğunu döndürdüğünü gördüm.

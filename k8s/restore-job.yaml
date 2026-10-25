@@ -1,0 +1,42 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mongo-restore
+  namespace: devops-case
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: mongorestore
+          image: mongo:7
+          command: ["/bin/sh", "-c"]
+          args:
+            - >
+              mongorestore --host=mongo
+              --username="$MONGO_INITDB_ROOT_USERNAME"
+              --password="$MONGO_INITDB_ROOT_PASSWORD"
+              --authenticationDatabase=admin
+              --gzip --archive=$(ls -t /backup/*.gz | head -1)
+              --nsInclude='sample_training.*'
+              --drop
+          env:
+            - name: MONGO_INITDB_ROOT_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: MONGO_INITDB_ROOT_USERNAME
+            - name: MONGO_INITDB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: app-secret
+                  key: MONGO_INITDB_ROOT_PASSWORD
+          volumeMounts:
+            - name: backup
+              mountPath: /backup
+              readOnly: true
+      volumes:
+        - name: backup
+          persistentVolumeClaim:
+            claimName: backup-pvc

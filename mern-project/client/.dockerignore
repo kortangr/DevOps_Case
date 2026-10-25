@@ -1,0 +1,8 @@
+node_modules
+build
+.git
+.env*
+npm-debug.log
+cypress
+cypress.json
+.DS_Store

@@ -1,0 +1,49 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mongo-backup
+  namespace: devops-case
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: mongodump
+              image: mongo:7
+              command: ["/bin/sh", "-c"]
+              args:
+                - >
+                  set -e;
+                  F=/backup/mongo-$(date +%Y%m%d-%H%M%S).gz;
+                  mongodump --host=mongo
+                  --username="$MONGO_INITDB_ROOT_USERNAME"
+                  --password="$MONGO_INITDB_ROOT_PASSWORD"
+                  --authenticationDatabase=admin
+                  --gzip --archive=$F;
+                  gzip -t $F;
+                  find /backup -name 'mongo-*.gz' -mtime +7 -delete
+              env:
+                - name: MONGO_INITDB_ROOT_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secret
+                      key: MONGO_INITDB_ROOT_USERNAME
+                - name: MONGO_INITDB_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: app-secret
+                      key: MONGO_INITDB_ROOT_PASSWORD
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: backup-pvc
