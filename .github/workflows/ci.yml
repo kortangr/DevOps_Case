@@ -1,91 +1,93 @@
 name: CI
 
-on:
-  push:
-    branches: [main]
-  pull_request:
+  on:
+    push:
+      branches: [main]
+    pull_request:
 
-jobs:
-  frontend-derleme:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+  jobs:
+    frontend-derleme:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: mern-project/client/package-lock.json
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+            cache-dependency-path: mern-project/client/package-lock.json
 
-      - name: Frontend bağımlılıklarını kur
-        working-directory: mern-project/client
-        env:
-          CYPRESS_INSTALL_BINARY: "0"
-        run: npm ci
+        - name: Frontend bağımlılıklarını kur
+          working-directory: mern-project/client
+          env:
+            CYPRESS_INSTALL_BINARY: "0"
+          run: npm ci
 
-      - name: Frontend'i derle
-        working-directory: mern-project/client
-        run: npm run build
+        - name: Frontend'i derle
+          working-directory: mern-project/client
+          run: npm run build
 
-  backend-derleme:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    backend-derleme:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: mern-project/server/package-lock.json
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+            cache-dependency-path: mern-project/server/package-lock.json
 
-      - name: Backend bağımlılıklarını kur
-        working-directory: mern-project/server
-        run: npm ci
+        - name: Backend bağımlılıklarını kur
+          working-directory: mern-project/server
+          run: npm ci
 
-      - name: Backend sözdizimi kontrolü
-        working-directory: mern-project/server
-        run: node --check server.mjs
+        - name: Backend sözdizimi kontrolü
+          working-directory: mern-project/server
+          run: node --check server.mjs
 
-  backend-duman:
-    needs: backend-derleme
-    runs-on: ubuntu-latest
-    services:
-      mongo:
-        image: mongo:7
-        ports:
-          - 27017:27017
-        options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
+    backend-duman:
+      needs: backend-derleme
+      runs-on: ubuntu-latest
+      services:
+        mongo:
+          image: mongo:7
+          ports:
+            - 27017:27017
+          options: >-
+            --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+            --health-interval 5s
+            --health-timeout 5s
+            --health-retries 10
+      steps:
+        - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: mern-project/server/package-lock.json
+        - uses: actions/setup-node@v4
+          with:
+            node-version: 22
+            cache: npm
+            cache-dependency-path: mern-project/server/package-lock.json
 
-      - name: Backend bağımlılıklarını kur
-        working-directory: mern-project/server
-        run: npm ci
+        - name: Backend bağımlılıklarını kur
+          working-directory: mern-project/server
+          run: npm ci
 
-      - name: Backend'i başlat ve duman testi yap
-        working-directory: mern-project/server
-        env:
-          ATLAS_URI: mongodb://localhost:27017
-        run: |
-          nohup node server.mjs > server.log 2>&1 &
-          for i in $(seq 1 15); do
-            if curl --silent --fail http://localhost:5050/api/healthcheck > /dev/null; then
-              echo "Sağlık adresi cevap verdi"
-              curl --silent --fail --show-error http://localhost:5050/api/record
-              echo
-              echo "Duman testi geçti"
-              exit 0
-            fi
+        - name: Backend'i başlat ve duman testi yap
+          working-directory: mern-project/server
+          env:
+            ATLAS_URI: mongodb://localhost:27017
+          run: |
+            nohup node server.mjs > server.log 2>&1 &
+            for i in $(seq 1 15); do
+              if curl --silent --fail http://localhost:5050/api/healthcheck > /dev/null; then
+                echo "Sağlık adresi cevap verdi"
+                curl --silent --fail --show-error http://localhost:5050/api/record
+                echo
+                echo "Duman testi geçti"
+                exit 0
+              fi
+              sleep 2
+            done
             sleep 2
           done
           echo "Backend 30 saniyede ayağa kalkmadı"
@@ -146,3 +148,37 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ghcr.io/${{ github.repository_owner }}/devops-case-${{ matrix.ad }}:${{ env.SHA_KISA }}
+
+  manifest-guncelle:
+    needs: imaj-gonder
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: manifest-guncelle
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Deployment dosyalarındaki imaj etiketini güncelle
+        run: |
+          SHA_KISA="${GITHUB_SHA::7}"
+          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-backend):.*|\1:${SHA_KISA}|" k8s/backend-deployment.yaml
+          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-frontend):.*|\1:${SHA_KISA}|" k8s/frontend-deployment.yaml
+          git diff
+
+      - name: Değişiklik varsa commit'le ve gönder
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add k8s/backend-deployment.yaml k8s/frontend-deployment.yaml
+          if git diff --cached --quiet; then
+            echo "Etiket zaten güncel, commit yok"
+          else
+            git commit -m "k8s: imaj etiketini ${GITHUB_SHA::7} yap [skip ci]"
+            git pull --rebase origin main
+            git push origin main
+          fi
