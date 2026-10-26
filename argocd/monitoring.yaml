@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: prometheus
+    targetRevision: 29.38.2
+    helm:
+      valuesObject:
+        # Bellek tasarrufu: yalnizca Prometheus, Alertmanager ve
+        # kube-state-metrics acik. Kalici disk yok.
+        prometheus-node-exporter:
+          enabled: false
+        prometheus-pushgateway:
+          enabled: false
+        kube-state-metrics:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        alertmanager:
+          persistence:
+            enabled: false
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+        server:
+          retention: 6h
+          persistentVolume:
+            enabled: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+        serverFiles:
+          alerting_rules.yml:
+            groups:
+              - name: devops-case
+                rules:
+                  - alert: EtlJobBasarisiz
+                    expr: >-
+                      kube_job_status_failed{namespace="devops-case",
+                      job_name=~"github-etl.*"} > 0
+                    for: 1m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "ETL Job basarisiz: {{ $labels.job_name }}"
+                      description: "kubectl logs ile pod loguna bakin."
+                  - alert: BackendHazirDegil
+                    expr: |
+                      kube_deployment_status_replicas_unavailable{
+                        namespace="devops-case",deployment="backend"} > 0
+                    for: 2m
+                    labels:
+                      severity: critical
+                    annotations:
+                      summary: "Backend kopyalari hazir degil"
+                      description: "kubectl get pods -l app=backend"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
