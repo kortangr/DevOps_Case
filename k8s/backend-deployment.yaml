@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: backend
-          image: ghcr.io/kortangr/devops-case-backend:d7c079b
+          image: ghcr.io/kortangr/devops-case-backend:ba337ca
           ports:
             - containerPort: 5050
           env:
