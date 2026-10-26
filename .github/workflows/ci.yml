@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  derleme:
+  frontend-derleme:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,3 +26,22 @@ jobs:
       - name: Frontend'i derle
         working-directory: mern-project/client
         run: npm run build
+
+  backend-derleme:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mern-project/server/package-lock.json
+
+      - name: Backend bağımlılıklarını kur
+        working-directory: mern-project/server
+        run: npm ci
+
+      - name: Backend sözdizimi kontrolü
+        working-directory: mern-project/server
+        run: node --check server.mjs
