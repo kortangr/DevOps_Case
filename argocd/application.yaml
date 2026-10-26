@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: devops-case
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kortangr/DevOps_Case.git
+    targetRevision: main
+    path: k8s
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: devops-case
