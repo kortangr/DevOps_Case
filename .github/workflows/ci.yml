@@ -104,7 +104,7 @@ jobs:
       - name: kubeconform'u indir
         run: |
           curl --silent --show-error --fail --location \
-            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubec\
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
             | tar xz kubeconform
 
       - name: Kubernetes manifestlerini doğrula
@@ -164,7 +164,7 @@ jobs:
       - name: Deployment dosyalarındaki imaj etiketini güncelle
         run: |
           SHA_KISA="${GITHUB_SHA::7}"
-          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-backend):.*|\1:${SHA_Kent.yaml
+          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-backend):.*|\1:${SHA_KISA}|" k8s/backend-deployment.yaml
           sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-frontend):.*|\1:${SHA_KISA}|" k8s/frontend-deployment.yaml
           git diff
 
