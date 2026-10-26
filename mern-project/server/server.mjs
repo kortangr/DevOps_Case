@@ -14,29 +14,29 @@ function log(seviye, mesaj) {
 app.use(cors());
 app.use(express.json());
 
-// Her istek bittiğinde bir satır yazar. Sağlık kontrolü log'u doldurmasın diye atlanır.
+// Her istek bittiğinde bir satır yazar.
+// Sağlık kontrolü log'u doldurmasın diye atlanır.
 app.use((req, res, next) => {
   if (req.path.startsWith("/api/healthcheck")) {
     return next();
   }
   const baslangic = Date.now();
   res.on("finish", () => {
-    const seviye =
-      res.statusCode >= 500 ? "ERROR" : res.statusCode >= 400 ? "WARN" : "INFO";
-    log(
-      seviye,
-      `${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - baslan
-    );
+    const kod = res.statusCode;
+    const seviye = kod >= 500 ? "ERROR" : kod >= 400 ? "WARN" : "INFO";
+    const sure = Date.now() - baslangic;
+    log(seviye, `${req.method} ${req.originalUrl} ${kod} ${sure}ms`);
   });
   next();
 });
 
-
+app.use("/api/record", records);
 app.use("/api/healthcheck", healthcheck);
 
 // Beklenmeyen route hataları buraya düşer.
 app.use((err, req, res, next) => {
-  log("ERROR", `${req.method} ${req.originalUrl} beklenmeyen hata: ${err.message}`);
+  const yer = `${req.method} ${req.originalUrl}`;
+  log("ERROR", `${yer} beklenmeyen hata: ${err.message}`);
   res.status(500).json({ hata: "sunucu hatasi" });
 });
 
