@@ -95,3 +95,17 @@ jobs:
         if: failure()
         working-directory: mern-project/server
         run: cat server.log
+
+  manifest-dogrulama:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: kubeconform'u indir
+        run: |
+          curl --silent --show-error --fail --location \
+            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            | tar xz kubeconform
+
+      - name: Kubernetes manifestlerini doğrula
+        run: ./kubeconform -strict -summary k8s/
