@@ -1,0 +1,47 @@
+ [
+    {
+      "repo": "argoproj/argo-cd",
+      "sabitlenen_surum": "v3.5.6",
+      "nerede": "Cluster: GitOps araci"
+    },
+    {
+      "repo": "yannh/kubeconform",
+      "sabitlenen_surum": "v0.8.0",
+      "nerede": "CI: manifest dogrulama"
+    },
+    {
+      "repo": "docker/build-push-action",
+      "sabitlenen_surum": "v7",
+      "nerede": "CI: imaj uretimi"
+    },
+    {
+      "repo": "docker/login-action",
+      "sabitlenen_surum": "v4",
+      "nerede": "CI: GHCR girisi"
+    },
+    {
+      "repo": "docker/setup-buildx-action",
+      "sabitlenen_surum": "v4",
+      "nerede": "CI: Buildx kurulumu"
+    },
+    {
+      "repo": "docker/setup-qemu-action",
+      "sabitlenen_surum": "v4",
+      "nerede": "CI: QEMU kurulumu"
+    },
+    {
+      "repo": "actions/checkout",
+      "sabitlenen_surum": "v4",
+      "nerede": "CI: tum islerde kod indirme"
+    },
+    {
+      "repo": "actions/setup-node",
+      "sabitlenen_surum": "v4",
+      "nerede": "CI: Node kurulumu"
+    },
+    {
+      "repo": "kortangr/DevOps_Case",
+      "sabitlenen_surum": null,
+      "nerede": "Projenin kendisi"
+    }
+  ]
