@@ -89,15 +89,22 @@ Bir düğümün `Ready` göründüğünü doğrulayın. `8080:80` eşlemesi, bil
 
 ```bash
 kubectl apply -f k8s/namespace.yaml
+U=KULLANICI
+P=PAROLA
 kubectl create secret generic app-secret -n devops-case \
-  --from-literal=MONGO_INITDB_ROOT_USERNAME=KULLANICI \
-  --from-literal=MONGO_INITDB_ROOT_PASSWORD=PAROLA \
-  --from-literal=ATLAS_URI="mongodb://KULLANICI:PAROLA@mongo:27017"
+  --from-literal=MONGO_INITDB_ROOT_USERNAME="$U" \
+  --from-literal=MONGO_INITDB_ROOT_PASSWORD="$P" \
+  --from-literal=ATLAS_URI="mongodb://$U:$P@mongo:27017"
 ```
 
-`KULLANICI` ve `PAROLA` yerine kendi değerlerinizi yazın. Repoda gerçek parola
-yoktur, `k8s/manual/secret_example.yaml` yalnızca bir şablondur. Secret,
-uygulama pod'ları başlamadan önce oluşturulmalıdır.
+`KULLANICI` ve `PAROLA` yerine kendi değerlerinizi yazın. Kullanıcı ve parola
+iki yerde geçtiği için değişkenle bir kez girilir. Üç değeri elle ayrı ayrı
+yazarsanız `ATLAS_URI` ötekilerden farklı çıkabilir ve backend
+`Authentication failed` hatasıyla yeniden başlayıp durur (`kubectl logs -n
+devops-case deploy/backend` ile görülür). Parolada `@`, `:`, `/` gibi
+karakterler kullanmayın, bağlantı adresini bozar. Repoda gerçek parola yoktur,
+`k8s/manual/secret_example.yaml` yalnızca bir şablondur. Secret, uygulama
+pod'ları başlamadan önce oluşturulmalıdır.
 
 ### 3. Argo CD'yi kurun
 
