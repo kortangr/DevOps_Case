@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  frontend-derleme:
+  frontend-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,19 +15,20 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mern-project/client/package-lock.json
+          cache-dependency-path: >-
+            mern-project/client/package-lock.json
 
-      - name: Frontend bağımlılıklarını kur
+      - name: Install dependencies
         working-directory: mern-project/client
         env:
           CYPRESS_INSTALL_BINARY: "0"
         run: npm ci
 
-      - name: Frontend'i derle
+      - name: Build
         working-directory: mern-project/client
         run: npm run build
 
-  backend-derleme:
+  backend-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,18 +37,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mern-project/server/package-lock.json
+          cache-dependency-path: >-
+            mern-project/server/package-lock.json
 
-      - name: Backend bağımlılıklarını kur
+      - name: Install dependencies
         working-directory: mern-project/server
         run: npm ci
 
-      - name: Backend sözdizimi kontrolü
+      - name: Syntax check
         working-directory: mern-project/server
-        run: node --check server.mjs
+        run: |
+          node --check server.mjs
+          node --check routes/record.mjs
+          node --check routes/healthcheck.mjs
+          node --check db/conn.mjs
 
-  backend-duman:
-    needs: backend-derleme
+  backend-smoke-test:
+    needs: backend-build
     runs-on: ubuntu-latest
     services:
       mongo:
@@ -55,7 +61,7 @@ jobs:
         ports:
           - 27017:27017
         options: >-
-          --health-cmd "mongosh --quiet --eval 'db.runCommand({ping:1})'"
+          --health-cmd "mongosh --eval 'db.hello()'"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -66,52 +72,57 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: mern-project/server/package-lock.json
+          cache-dependency-path: >-
+            mern-project/server/package-lock.json
 
-      - name: Backend bağımlılıklarını kur
+      - name: Install dependencies
         working-directory: mern-project/server
         run: npm ci
 
-      - name: Backend'i başlat ve duman testi yap
+      - name: Start backend and run API tests
         working-directory: mern-project/server
         env:
           ATLAS_URI: mongodb://localhost:27017
+          HEALTH: http://localhost:5050/api/healthcheck
         run: |
           nohup node server.mjs > server.log 2>&1 &
           for i in $(seq 1 15); do
-            if curl --silent --fail http://localhost:5050/api/healthcheck > /dev/null; then
-              echo "Sağlık adresi cevap verdi"
-              curl --silent --fail --show-error http://localhost:5050/api/record
-              echo
-              echo "Duman testi geçti"
-              exit 0
+            if curl -sf "$HEALTH" > /dev/null; then
+              bash ../../scripts/api-test.sh
+              exit $?
             fi
             sleep 2
           done
-          echo "Backend 30 saniyede ayağa kalkmadı"
+          echo "Backend did not start in 30s"
           exit 1
 
-      - name: Hata durumunda backend günlüğünü göster
+      - name: Show backend log on failure
         if: failure()
         working-directory: mern-project/server
         run: cat server.log
 
-  manifest-dogrulama:
+  manifest-validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: kubeconform'u indir
+      - name: Download kubeconform
         run: |
-          curl --silent --show-error --fail --location \
-            https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
-            | tar xz kubeconform
+          V=v0.8.0
+          BASE=https://github.com/yannh/kubeconform
+          URL="$BASE/releases/download/$V"
+          FILE=kubeconform-linux-amd64.tar.gz
+          curl -sSfL "$URL/$FILE" | tar xz kubeconform
 
-      - name: Kubernetes manifestlerini doğrula
+      - name: Validate Kubernetes manifests
         run: ./kubeconform -strict -summary k8s/
 
-  imaj-gonder:
-    needs: [frontend-derleme, backend-derleme, backend-duman, manifest-dogrulama]
+  image-push:
+    needs:
+      - frontend-build
+      - backend-build
+      - backend-smoke-test
+      - manifest-validate
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -120,17 +131,22 @@ jobs:
     strategy:
       matrix:
         include:
-          - ad: backend
-            klasor: mern-project/server
-          - ad: frontend
-            klasor: mern-project/client
-          - ad: etl
-            klasor: python-project
+          - app: backend
+            dir: mern-project/server
+          - app: frontend
+            dir: mern-project/client
+          - app: etl
+            dir: python-project
     steps:
       - uses: actions/checkout@v4
 
-      - name: Kısa commit kodunu hesapla
-        run: echo "SHA_KISA=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Compute image tag
+        run: |
+          OWNER="${{ github.repository_owner }}"
+          NAME="${{ matrix.app }}"
+          TAG="ghcr.io/$OWNER/devops-case-$NAME"
+          TAG="$TAG:${GITHUB_SHA::7}"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
 
       - uses: docker/setup-qemu-action@v4
 
@@ -144,42 +160,51 @@ jobs:
 
       - uses: docker/build-push-action@v7
         with:
-          context: ${{ matrix.klasor }}
+          context: ${{ matrix.dir }}
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/devops-case-${{ matrix.ad }}:${{ env.SHA_KISA }}
+          tags: ${{ env.IMAGE_TAG }}
 
-  manifest-guncelle:
-    needs: imaj-gonder
+  manifest-update:
+    needs: image-push
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
     concurrency:
-      group: manifest-guncelle
+      group: manifest-update
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
 
-      - name: Deployment dosyalarındaki imaj etiketini güncelle
+      - name: Update image tags in manifests
         run: |
-          SHA_KISA="${GITHUB_SHA::7}"
-          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-backend):.*|\1:${SHA_KISA}|" k8s/backend-deployment.yaml
-          sed -i -E "s|(image: ghcr.io/[^:]+/devops-case-frontend):.*|\1:${SHA_KISA}|" k8s/frontend-deployment.yaml
-          sed -i -E "s|(devops-case-etl):.*|\1:${SHA_KISA}|" k8s/etl-cronjob.yaml
+          SHA="${GITHUB_SHA::7}"
+          sed -i -E \
+            "s|(devops-case-backend):.*|\1:${SHA}|" \
+            k8s/backend-deployment.yaml
+          sed -i -E \
+            "s|(devops-case-frontend):.*|\1:${SHA}|" \
+            k8s/frontend-deployment.yaml
+          sed -i -E \
+            "s|(devops-case-etl):.*|\1:${SHA}|" \
+            k8s/etl-cronjob.yaml
           git diff
 
-      - name: Değişiklik varsa commit'le ve gönder
+      - name: Commit and push if changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          BOT=github-actions[bot]
+          NOREPLY=users.noreply.github.com
+          git config user.name "$BOT"
+          git config user.email "41898282+$BOT@$NOREPLY"
           git add k8s
           if git diff --cached --quiet; then
-            echo "Etiket zaten güncel, commit yok"
+            echo "Tags already up to date"
           else
-            git commit -m "k8s: imaj etiketini ${GITHUB_SHA::7} yap [skip ci]"
+            MSG="k8s: imaj etiketini ${GITHUB_SHA::7} yap"
+            git commit -m "$MSG [skip ci]"
             git pull --rebase origin main
             git push origin main
           fi
