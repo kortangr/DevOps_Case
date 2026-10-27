@@ -1,9 +1,10 @@
 """Bagimlilik guncellik izleyicisi (GitHub ETL).
 
-Her izlenen reponun son surumunu GitHub API'den alir (extract),
-kayit icin gerekli alanlari secer (transform), MongoDB'ye yazar
-(load). Ayni repo tekrar islenince kayit guncellenir, yeni kayit
-acilmaz. Sabitlenen surum eskiyse loga uyari yazilir.
+Izlenen her reponun son surumunu GitHub API'den
+alir (extract), gerekli alanlari secer (transform)
+ve MongoDB'ye yazar (load). Ayni repo tekrar
+islenince kayit guncellenir, yeni kayit acilmaz.
+Sabitlenen surum eskiyse loga uyari yazilir.
 """
 
 import json
@@ -14,6 +15,8 @@ from datetime import datetime, timezone
 
 import requests
 from pymongo import MongoClient
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,14 +25,42 @@ logging.basicConfig(
 )
 log = logging.getLogger("etl")
 
+UTC = timezone.utc
 GITHUB_API = "https://api.github.com"
-MONGO_URI = os.environ.get("ATLAS_URI", "mongodb://localhost:27017")
-DB_NAME = os.environ.get("ETL_DB", "github_etl")
-COLLECTION = os.environ.get("ETL_COLLECTION", "repositories")
-REPO_LISTESI = os.environ.get(
-    "ETL_REPO_LISTESI",
-    os.path.join(os.path.dirname(__file__), "izlenen_repolar.json"),
+KALAN = "X-RateLimit-Remaining"
+SIFIRLAMA = "X-RateLimit-Reset"
+MONGO_URI = os.environ.get(
+    "ATLAS_URI", "mongodb://localhost:27017"
 )
+DB_NAME = os.environ.get("ETL_DB", "github_etl")
+COLLECTION = os.environ.get(
+    "ETL_COLLECTION", "repositories"
+)
+REPO_DIZINI = os.path.dirname(__file__)
+VARSAYILAN_LISTE = os.path.join(
+    REPO_DIZINI, "izlenen_repolar.json"
+)
+REPO_LISTESI = os.environ.get(
+    "ETL_REPO_LISTESI", VARSAYILAN_LISTE
+)
+
+
+def oturum_olustur():
+    # Zaman asimi ve 5xx hatalarinda 3 kez yeniden dener.
+    yeniden = Retry(
+        total=3,
+        backoff_factor=2,
+        status_forcelist=[500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    oturum = requests.Session()
+    oturum.mount("https://", HTTPAdapter(max_retries=yeniden))
+    tur = "application/vnd.github+json"
+    oturum.headers["Accept"] = tur
+    return oturum
+
+
+OTURUM = oturum_olustur()
 
 
 def listeyi_oku():
@@ -39,16 +70,25 @@ def listeyi_oku():
 
 def github_get(yol):
     log.info("GitHub istegi: %s", yol)
-    return requests.get(
-        GITHUB_API + yol,
-        headers={"Accept": "application/vnd.github+json"},
-        timeout=15,
-    )
+    return OTURUM.get(GITHUB_API + yol, timeout=15)
+
+
+def cevabi_kontrol(cevap):
+    # Istek siniri dolduysa nedeni acikca loglar.
+    kalan = cevap.headers.get(KALAN)
+    if cevap.status_code == 403 and kalan == "0":
+        ham = cevap.headers.get(SIFIRLAMA, 0)
+        zaman = datetime.fromtimestamp(int(ham), UTC)
+        log.error(
+            "Istek siniri doldu, sifirlanma %s UTC",
+            zaman.strftime("%H:%M"),
+        )
+    cevap.raise_for_status()
 
 
 def repo_bilgisi_al(repo):
     cevap = github_get(f"/repos/{repo}")
-    cevap.raise_for_status()
+    cevabi_kontrol(cevap)
     return cevap.json()
 
 
@@ -57,7 +97,7 @@ def son_surum_al(repo):
     if cevap.status_code == 404:
         log.info("%s: yayinlanmis surum yok", repo)
         return None
-    cevap.raise_for_status()
+    cevabi_kontrol(cevap)
     return cevap.json()
 
 
@@ -69,6 +109,7 @@ def guncel_mi(sabit, son):
 
 def donustur(repo, surum, ayar):
     son = surum["tag_name"] if surum else None
+    tarih = surum["published_at"] if surum else None
     sabit = ayar.get("sabitlenen_surum")
     return {
         "full_name": repo["full_name"],
@@ -79,20 +120,19 @@ def donustur(repo, surum, ayar):
         "nerede": ayar.get("nerede"),
         "sabitlenen_surum": sabit,
         "son_surum": son,
-        "son_surum_tarihi": surum["published_at"] if surum else None,
+        "son_surum_tarihi": tarih,
         "guncel_mi": guncel_mi(sabit, son),
     }
 
 
 def yukle(koleksiyon, repo_id, belge):
-    simdi = datetime.now(timezone.utc).isoformat()
+    simdi = datetime.now(UTC).isoformat()
+    guncelle = {
+        "$set": {**belge, "etl_son_calisma": simdi},
+        "$setOnInsert": {"etl_ilk_kayit": simdi},
+    }
     sonuc = koleksiyon.update_one(
-        {"_id": repo_id},
-        {
-            "$set": {**belge, "etl_son_calisma": simdi},
-            "$setOnInsert": {"etl_ilk_kayit": simdi},
-        },
-        upsert=True,
+        {"_id": repo_id}, guncelle, upsert=True
     )
     if sonuc.upserted_id is not None:
         return "yeni kayit olusturuldu"
@@ -109,7 +149,8 @@ def logla_surum(belge):
         )
     elif belge["guncel_mi"] is False:
         log.warning(
-            "%s: sabitlenen %s, son surum %s -> yeni surum var",
+            "%s: sabitlenen %s, son surum %s"
+            " -> yeni surum var",
             ad,
             belge["sabitlenen_surum"],
             belge["son_surum"],
@@ -123,7 +164,9 @@ def isle(ayar, koleksiyon):
         surum = son_surum_al(repo_adi)
         belge = donustur(repo, surum, ayar)
         durum = yukle(koleksiyon, repo["id"], belge)
-        log.info("%s: %s (id=%s)", repo_adi, durum, repo["id"])
+        kimlik = repo["id"]
+        sablon = "%s: %s (id=%s)"
+        log.info(sablon, repo_adi, durum, kimlik)
         logla_surum(belge)
         return True
     except Exception:
@@ -135,13 +178,16 @@ def main():
     log.info("ETL basladi")
     liste = listeyi_oku()
     log.info("Izlenecek repo sayisi: %d", len(liste))
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=10000)
+    client = MongoClient(
+        MONGO_URI, serverSelectionTimeoutMS=10000
+    )
     koleksiyon = client[DB_NAME][COLLECTION]
     sonuclar = [isle(ayar, koleksiyon) for ayar in liste]
     basarili = sonuclar.count(True)
     basarisiz = sonuclar.count(False)
     toplam = koleksiyon.count_documents({})
-    log.info("Basarili: %d, basarisiz: %d", basarili, basarisiz)
+    ozet = "Basarili: %d, basarisiz: %d"
+    log.info(ozet, basarili, basarisiz)
     log.info("Koleksiyondaki toplam kayit: %d", toplam)
     if basarisiz:
         log.error("ETL kismen basarisiz")
@@ -155,4 +201,4 @@ if __name__ == "__main__":
         sys.exit(main())
     except Exception:
         log.exception("ETL basarisiz")
-        sys.exit(1)
+        sys.exit(1)     
