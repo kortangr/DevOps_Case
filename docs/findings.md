@@ -1,3 +1,3 @@
-1. Bir API kullancısı olarak veri gönderme işlemini test ederken verinin gönderilmesinde sorun olmadığını fakat posizyon kısmında bir filtreleme olmadan Frontend kısmında sunulan seçenekelerden farklı pozisyonların da gönderilebildiğini ve bu isteklerin backend tarafından kabul edildiğini gördüm.
-
-2. /api/healtcheck isteği gönderdiğimde sistem durumunu gösteren ksıımda "OK" kısmının mongo ile istibaharat sağlamadan sistemin aktif olduğunu döndürdüğünü gördüm.
+1.Healtcheck: healtcheck.mjs dosyasındaki kod MongoDb ile iletişim kurmadan, herhangi başka bir kontrol de yapmadan "OK" döndürüyordu. Bu durum sistem sağlığı hakkında yanılgı yaratıyordu. Mongo çökse bile podlar sağıklı görünüyordu dolayısıyla da podlardan istekler akmaya devam ediyordu. Bu sorunu çözmek için Healtcheck.mjs nin mongo'ya ping atmasını sağladım. Bu ping 2 saniye içinde cevaplanmazsa da 503 döndürmesini istedim ve bu 503'ü readiness probe'ye bağladım.  readiness probe bir HTTP isteğini healthcheck.mjs'ye atıyor, healtcheck ise bunu mongoya ping olarak gönderiyor gelen cevaba göre sağılıklı(200), sağlıksız(503) döndürüyor.
+Etki: MongoDb çöktüğünde haber alınmaması ve farkedilene kadar sistemin kullanılamaması.
+Önem: Yüksek
