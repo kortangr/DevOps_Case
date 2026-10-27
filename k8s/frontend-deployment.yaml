@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/kortangr/devops-case-frontend:6b8d06d
+          image: ghcr.io/kortangr/devops-case-frontend:c525c37
           ports:
             - containerPort: 8080
           readinessProbe:
