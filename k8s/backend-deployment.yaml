@@ -12,6 +12,12 @@ spec:
       labels:
         app: backend
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: backend
           image: ghcr.io/kortangr/devops-case-backend:1d1fbba
@@ -23,6 +29,11 @@ spec:
                 secretKeyRef:
                   name: app-secret
                   key: ATLAS_URI
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           readinessProbe:
             httpGet:
               path: /api/healthcheck
