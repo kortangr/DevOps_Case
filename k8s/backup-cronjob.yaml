@@ -14,6 +14,12 @@ spec:
       template:
         spec:
           restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: mongodump
               image: mongo:7
@@ -29,6 +35,10 @@ spec:
                   --gzip --archive=$F;
                   gzip -t $F;
                   find /backup -name 'mongo-*.gz' -mtime +7 -delete
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
               env:
                 - name: MONGO_INITDB_ROOT_USERNAME
                   valueFrom:

@@ -8,6 +8,12 @@ spec:
   template:
     spec:
       restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: mongorestore
           image: mongo:7
@@ -21,6 +27,10 @@ spec:
               --gzip --archive=$(ls -t /backup/*.gz | head -1)
               --nsInclude='sample_training.*'
               --drop
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           env:
             - name: MONGO_INITDB_ROOT_USERNAME
               valueFrom:
