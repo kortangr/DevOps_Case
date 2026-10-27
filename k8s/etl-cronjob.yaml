@@ -21,7 +21,7 @@ spec:
             runAsUser: 10001
           containers:
             - name: etl
-              image: ghcr.io/kortangr/devops-case-etl:a59ebe3
+              image: ghcr.io/kortangr/devops-case-etl:d25323e
               env:
                 - name: ATLAS_URI
                   valueFrom:

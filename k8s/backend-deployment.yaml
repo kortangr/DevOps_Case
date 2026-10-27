@@ -20,7 +20,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: backend
-          image: ghcr.io/kortangr/devops-case-backend:a59ebe3
+          image: ghcr.io/kortangr/devops-case-backend:d25323e
           ports:
             - containerPort: 5050
           env:
