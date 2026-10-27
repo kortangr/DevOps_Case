@@ -8,7 +8,8 @@ const PORT = 5050;
 const app = express();
 
 function log(seviye, mesaj) {
-  console.log(`${new Date().toISOString()} ${seviye} ${mesaj}`);
+  const an = new Date().toISOString();
+  console.log(`${an} ${seviye} ${mesaj}`);
 }
 
 app.use(cors());
@@ -23,9 +24,13 @@ app.use((req, res, next) => {
   const baslangic = Date.now();
   res.on("finish", () => {
     const kod = res.statusCode;
-    const seviye = kod >= 500 ? "ERROR" : kod >= 400 ? "WARN" : "INFO";
+    let seviye = "INFO";
+    if (kod >= 500) seviye = "ERROR";
+    else if (kod >= 400) seviye = "WARN";
     const sure = Date.now() - baslangic;
-    log(seviye, `${req.method} ${req.originalUrl} ${kod} ${sure}ms`);
+    const m = req.method;
+    const yol = req.originalUrl;
+    log(seviye, `${m} ${yol} ${kod} ${sure}ms`);
   });
   next();
 });
@@ -33,11 +38,25 @@ app.use((req, res, next) => {
 app.use("/api/record", records);
 app.use("/api/healthcheck", healthcheck);
 
-// Beklenmeyen route hataları buraya düşer.
+// Rotalardan gelen hatalar buraya düşer.
+// 4xx istemci hatasıdır, gerisi sunucu hatasıdır.
+function istemciHatasi(err) {
+  return err.status >= 400 && err.status < 500;
+}
+
 app.use((err, req, res, next) => {
+  if (res.headersSent) {
+    return next(err);
+  }
   const yer = `${req.method} ${req.originalUrl}`;
-  log("ERROR", `${yer} beklenmeyen hata: ${err.message}`);
-  res.status(500).json({ hata: "sunucu hatasi" });
+  if (!istemciHatasi(err)) {
+    log("ERROR", `${yer} hata: ${err.message}`);
+    const sunucuGovdesi = { hata: "sunucu hatasi" };
+    return res.status(500).json(sunucuGovdesi);
+  }
+  log("WARN", `${yer} gecersiz: ${err.message}`);
+  const istemciGovdesi = { hata: "gecersiz istek" };
+  res.status(err.status).json(istemciGovdesi);
 });
 
 // start the Express server
