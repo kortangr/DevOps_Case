@@ -23,3 +23,17 @@ spec:
                 secretKeyRef:
                   name: app-secret
                   key: ATLAS_URI
+          readinessProbe:
+            httpGet:
+              path: /api/healthcheck
+              port: 5050
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: 5050
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
