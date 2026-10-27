@@ -20,7 +20,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: frontend
-          image: ghcr.io/kortangr/devops-case-frontend:1981e5d
+          image: ghcr.io/kortangr/devops-case-frontend:fcd55e6
           ports:
             - containerPort: 8080
           securityContext:
