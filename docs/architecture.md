@@ -30,7 +30,11 @@ flowchart LR
   end
 
   etl -->|"HTTPS"| gh["GitHub API"]
+  fe -.->|"React dosyaları tarayıcıya iner"| user
+  user -.->|"arayüz kodu /api isteği yapar"| lb
 ```
+
+Düz oklar isteğin gittiği yönü, kesikli oklar arayüz dosyalarının tarayıcıya inişini ve ardından tarayıcıdaki arayüz kodunun yaptığı `/api` isteklerini gösterir. Frontend pod'ları backend'i kendileri çağırmaz, yalnızca statik dosya sunar. Backend çağrısını tarayıcı yapar ve bu çağrı yine Ingress'ten geçer.
 
 | Bileşen | Görev |
 | --- | --- |
@@ -44,6 +48,30 @@ flowchart LR
 | Prometheus, Alertmanager | `EtlJobBasarisiz` ve `BackendHazirDegil` alarm kurallarını değerlendirir, alarmı gösterir (bildirim kanalı yok) |
 
 Güvenlik: tüm uygulama konteynerleri root olmayan kullanıcıyla çalışır (backend 1000, frontend 101, MongoDB ve yedek işleri 999), yetkiler düşürülmüştür. Kullanıcı adı ve parola `app-secret` Secret'ında tutulur, depoda yoktur.
+
+### Bir isteğin yolu
+
+Kayıt listesini açan bir kullanıcının isteği şu yolu izler:
+
+1. Tarayıcı `http://localhost:8080` adresine gider. Docker, bu portu k3d yük dengeleyicisinin 80 portuna bağlar.
+2. Yük dengeleyici isteği Traefik Ingress'e iletir.
+3. Yol `/` ise Ingress isteği `frontend` Service'ine (port 8080) yönlendirir, Service de iki frontend kopyasından birine dağıtır. nginx, React uygulamasının statik dosyalarını tarayıcıya gönderir. Arayüz kodu bundan sonra tarayıcıda çalışır.
+4. Arayüz kayıtları almak için aynı adrese bağıl bir istek yapar, örneğin `/api/record/`. Yol `/api` ile başladığı için Ingress bu sefer isteği `backend` Service'ine (port 5050) yönlendirir, Service de iki backend kopyasından birine dağıtır.
+5. Backend (Express) isteği doğrular (örneğin kayıt kimliği geçerli biçimde mi) ve MongoDB'ye `mongo` Service'i üzerinden (port 27017) bağlanıp kaydı okur ya da yazar.
+6. Cevap aynı yoldan geri döner: MongoDB, backend, Ingress, tarayıcı. Backend her isteği zaman damgası, yöntem, yol, durum kodu ve süreyle loglar.
+
+Backend kopyalarının hazır olup olmadığını Kubernetes `/api/healthcheck` ile sınar: bu uç MongoDB'ye ping atar, cevap vermezse 503 döner ve o kopya Service'ten çıkarılır. Böylece MongoDB erişilemezken istek bozuk bir backend'e gitmez.
+
+### Dış erişim noktaları
+
+| Erişim | Adres | Nasıl |
+| --- | --- | --- |
+| Uygulama (arayüz ve API) | `http://localhost:8080` | Kalıcı. Kümenin tek dışa açık HTTP noktası |
+| Kubernetes API | `localhost:<rastgele port>` | `kubectl` için, kalıcı. k3d portu her kurulumda kendisi atar (`docker ps` çıktısında 6443'e bağlı port) |
+| Argo CD arayüzü | `https://localhost:8090` | Yalnızca `kubectl port-forward` çalışırken |
+| Prometheus, Alertmanager | `localhost:9090`, `localhost:9093` | Yalnızca `kubectl port-forward` çalışırken |
+
+MongoDB ve backend yalnızca küme içinden erişilebilir (Service tipi `ClusterIP`), dışarıya açık değildir. Dışarıya giden bağlantılar: ETL'in GitHub API'sine istekleri ve kümenin GHCR'den imaj çekmesi.
 
 ## 2. Teslimat hattı (CI/CD ve GitOps)
 
